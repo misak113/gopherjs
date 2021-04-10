@@ -121,7 +121,7 @@ var knownFails = map[string]failReason{
 	"fixedbugs/issue27518b.go": {desc: "sigpanic can make dead pointer live again"},
 	"fixedbugs/issue29190.go":  {desc: "append does not fail when length overflows"},
 
-	// These are new tests in Go 1.12.9.
+	/*// These are new tests in Go 1.12.9.
 	"fixedbugs/issue30977.go": {category: neverTerminates, desc: "does for { runtime.GC() }"},
 	"fixedbugs/issue32477.go": {category: notApplicable, desc: "uses runtime.SetFinalizer and runtime.GC"},
 	"fixedbugs/issue32680.go": {category: notApplicable, desc: "uses -gcflags=-d=ssa/check/on flag"},
@@ -139,7 +139,28 @@ var knownFails = map[string]failReason{
 	"fixedbugs/issue35027.go":  {category: usesUnsupportedPackage, desc: "uses unsupported conversion to reflect.SliceHeader and -gcflags=-d=checkptr"},
 	"fixedbugs/issue35073.go":  {category: usesUnsupportedPackage, desc: "uses unsupported flag -gcflags=-d=checkptr"},
 	"fixedbugs/issue35576.go":  {category: lowLevelRuntimeDifference, desc: "GopherJS print/println format for floats differs from Go's"},
-	"fixedbugs/issue40917.go":  {category: notApplicable, desc: "uses pointer arithmetic and unsupported flag -gcflags=-d=checkptr"},
+	"fixedbugs/issue40917.go":  {category: notApplicable, desc: "uses pointer arithmetic and unsupported flag -gcflags=-d=checkptr"},*/
+
+	// These are new tests in Go 1.13.
+	"fixedbugs/issue15002.go":  {desc: "native function not implemented: syscall.Getpagesize"},
+	"fixedbugs/issue15992.go":  {desc: "native function not implemented: syscall.Getpagesize"},
+	"fixedbugs/issue19113.go":  {desc: "did not panic"},
+	"fixedbugs/issue22326.go":  {desc: "incorrect output for print"},
+	"fixedbugs/issue28748.go":  {desc: "reflect error"},
+	"fixedbugs/issue29504.go":  {desc: "did not panic"},
+	"fixedbugs/issue30116.go":  {desc: "index out of range"},
+	"fixedbugs/issue30116u.go": {desc: "index out of range"},
+	"fixedbugs/issue30977.go":  {category: neverTerminates, desc: "timeout"},
+	"fixedbugs/issue31546.go":  {desc: "throw error"},
+	"fixedbugs/issue32477.go":  {desc: "heap object finalized at the wrong time"},
+	"fixedbugs/issue32680.go":  {desc: "unknown shorthand flag"},
+
+	// These are new test in Go 1.15
+	"fixedbugs/issue34395.go": {desc: "FATAL ERROR: CALL_AND_RETRY_LAST Allocation failed - JavaScript heap out of memory"},
+	"fixedbugs/issue35027.go": {desc: "unknown shorthand flag: 'g' in -gcflags=-d=checkptr"},
+	"fixedbugs/issue35073.go": {desc: "unknown shorthand flag: 'g' in -gcflags=-d=checkptr"},
+	"fixedbugs/issue35576.go": {desc: "unknown shorthand flag: 'g' in -gcflags=-d=checkptr"},
+	"fixedbugs/issue40917.go": {desc: "unknown shorthand flag: 'g' in -gcflags=-d=checkptr"},
 }
 
 type failCategory uint8

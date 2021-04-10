@@ -78,6 +78,7 @@ func main() {
 	compilerFlags.BoolVar(&options.Color, "color", terminal.IsTerminal(int(os.Stderr.Fd())) && os.Getenv("TERM") != "dumb", "colored output")
 	compilerFlags.StringVar(&tags, "tags", "", "a list of build tags to consider satisfied during the build")
 	compilerFlags.BoolVar(&options.MapToLocalDisk, "localmap", false, "use local paths for sourcemap")
+	compilerFlags.BoolVarP(&options.Rebuild, "force", "a", false, "force rebuilding of packages that are already up-to-date")
 
 	flagWatch := pflag.NewFlagSet("", 0)
 	flagWatch.BoolVarP(&options.Watch, "watch", "w", false, "watch for changes to the source files")
@@ -127,7 +128,6 @@ func main() {
 				// Expand import path patterns.
 				patternContext := gbuild.NewBuildContext("", options.BuildTags)
 				pkgs := (&gotool.Context{BuildContext: *patternContext}).ImportPaths(args)
-
 				for _, pkgPath := range pkgs {
 					if s.Watcher != nil {
 						pkg, err := gbuild.NewBuildContext(s.InstallSuffix(), options.BuildTags).Import(pkgPath, "", build.FindOnly)
@@ -204,7 +204,6 @@ func main() {
 					if err != nil {
 						return err
 					}
-
 					archive, err := s.BuildPackage(pkg)
 					if err != nil {
 						return err
@@ -505,6 +504,9 @@ func main() {
 
 		if len(args) == 1 {
 			root = args[0]
+			if strings.HasPrefix(root, ".") {
+				root = filepath.Join(currentDirectory, root)
+			}
 		}
 
 		// Create a new session eagerly to check if it fails, and report the error right away.
@@ -585,7 +587,6 @@ type serveCommandFileSystem struct {
 
 func (fs serveCommandFileSystem) Open(requestName string) (http.File, error) {
 	name := path.Join(fs.serveRoot, requestName[1:]) // requestName[0] == '/'
-
 	dir, file := path.Split(name)
 	base := path.Base(dir) // base is parent folder name, which becomes the output file name.
 
@@ -607,7 +608,6 @@ func (fs serveCommandFileSystem) Open(requestName string) (http.File, error) {
 			isMap = false
 			isIndex = false
 		}
-
 		switch {
 		case isPkg:
 			buf := new(bytes.Buffer)
@@ -622,7 +622,10 @@ func (fs serveCommandFileSystem) Open(requestName string) (http.File, error) {
 				m := &sourcemap.Map{File: base + ".js"}
 				sourceMapFilter.MappingCallback = gbuild.NewMappingCallback(m, fs.options.GOROOT, fs.options.GOPATH, fs.options.MapToLocalDisk)
 
-				deps, err := compiler.ImportDependencies(archive, s.BuildImportPath)
+				deps, err := compiler.ImportDependencies(archive, func(path string) (*compiler.Archive, error) {
+					_, archive, err := s.BuildImportPathWithPackage(path, pkg)
+					return archive, err
+				})
 				if err != nil {
 					return err
 				}
@@ -647,6 +650,16 @@ func (fs serveCommandFileSystem) Open(requestName string) (http.File, error) {
 			if content, ok := fs.sourceMaps[name]; ok {
 				return newFakeFile(base+".js.map", content), nil
 			}
+		}
+	}
+
+	if fs.serveRoot != "" {
+		dir := http.Dir(fs.serveRoot)
+		if f, err := dir.Open(name); err == nil {
+			return f, nil
+		}
+		if f, err := dir.Open(requestName); err == nil {
+			return f, nil
 		}
 	}
 

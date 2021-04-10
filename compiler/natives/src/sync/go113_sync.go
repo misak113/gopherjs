@@ -1,5 +1,5 @@
 // +build js
-// +build !go1.13
+// +build go1.13
 
 package sync
 
@@ -19,13 +19,14 @@ var semWaiters = make(map[*uint32][]chan bool)
 var semAwoken = make(map[*uint32]uint32)
 
 func runtime_Semacquire(s *uint32) {
-	runtime_SemacquireMutex(s, false, 1)
+	runtime_SemacquireMutex(s, false, 0)
 }
 
 // SemacquireMutex is like Semacquire, but for profiling contended Mutexes.
 // Mutex profiling is not supported, so just use the same implementation as runtime_Semacquire.
 // TODO: Investigate this. If it's possible to implement, consider doing so, otherwise remove this comment.
 func runtime_SemacquireMutex(s *uint32, lifo bool, skipframes int) {
+	// TODO: Use skipframes if needed/possible.
 	if (*s - semAwoken[s]) == 0 {
 		ch := make(chan bool)
 		if lifo {
@@ -43,7 +44,7 @@ func runtime_SemacquireMutex(s *uint32, lifo bool, skipframes int) {
 }
 
 func runtime_Semrelease(s *uint32, handoff bool, skipframes int) {
-	// TODO: Use handoff if needed/possible.
+	// TODO: Use handoff, skipframes if needed/possible.
 	*s++
 
 	w := semWaiters[s]

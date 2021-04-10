@@ -961,7 +961,8 @@ func (fc *funcContext) translateConversion(expr ast.Expr, desiredType types.Type
 		return fc.translateExpr(expr)
 	}
 
-	if fc.pkgCtx.Pkg.Path() == "reflect" || fc.pkgCtx.Pkg.Path() == "internal/reflectlite" {
+	pkgPath := fc.pkgCtx.Pkg.Path()
+	if pkgPath == "reflect" || pkgPath == "internal/reflectlite" {
 		if call, isCall := expr.(*ast.CallExpr); isCall && types.Identical(fc.pkgCtx.TypeOf(call.Fun), types.Typ[types.UnsafePointer]) {
 			if ptr, isPtr := desiredType.(*types.Pointer); isPtr {
 				if named, isNamed := ptr.Elem().(*types.Named); isNamed {

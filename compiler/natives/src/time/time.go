@@ -26,6 +26,10 @@ type runtimeTimer struct {
 	active  bool
 }
 
+func runtimeNano() int64 {
+	return js.Global.Get("Date").New().Call("getTime").Int64() * int64(Millisecond)
+}
+
 func now() (sec int64, nsec int32, mono int64) {
 	n := runtimeNano()
 	return n / int64(Second), int32(n % int64(Second)), n

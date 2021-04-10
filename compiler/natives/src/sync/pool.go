@@ -1,4 +1,5 @@
 // +build js
+// +build !go1.13
 
 package sync
 

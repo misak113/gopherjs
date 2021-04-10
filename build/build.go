@@ -19,6 +19,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/gopherjs/gopherjs/internal/goversion"
+
 	"github.com/fsnotify/fsnotify"
 	"github.com/gopherjs/gopherjs/compiler"
 	"github.com/gopherjs/gopherjs/compiler/gopherjspkg"
@@ -26,6 +28,8 @@ import (
 	"github.com/neelance/sourcemap"
 	"github.com/shurcooL/httpfs/vfsutil"
 	"golang.org/x/tools/go/buildutil"
+
+	"github.com/visualfc/fastmod"
 )
 
 // DefaultGOROOT is the default GOROOT value for builds.
@@ -68,7 +72,8 @@ func NewBuildContext(installSuffix string, buildTags []string) *build.Context {
 			"purego", // See https://golang.org/issues/23172.
 		),
 		ReleaseTags: build.Default.ReleaseTags[:compiler.GoVersion],
-		CgoEnabled:  true, // detect `import "C"` to throw proper error
+		//ReleaseTags: goversion.ReleaseTags(),
+		CgoEnabled: true, // detect `import "C"` to throw proper error
 
 		IsDir: func(path string) bool {
 			if strings.HasPrefix(path, gopherjsRoot+string(filepath.Separator)) {
@@ -138,10 +143,10 @@ func Import(path string, mode build.ImportMode, installSuffix string, buildTags 
 		wd = ""
 	}
 	bctx := NewBuildContext(installSuffix, buildTags)
-	return importWithSrcDir(*bctx, path, wd, mode, installSuffix)
+	return importWithSrcDir(*bctx, path, wd, mode, installSuffix, nil)
 }
 
-func importWithSrcDir(bctx build.Context, path string, srcDir string, mode build.ImportMode, installSuffix string) (*PackageData, error) {
+func importWithSrcDir(bctx build.Context, path string, srcDir string, mode build.ImportMode, installSuffix string, mod *fastmod.Package) (*PackageData, error) {
 	// bctx is passed by value, so it can be modified here.
 	var isVirtual bool
 	switch path {
@@ -167,7 +172,24 @@ func importWithSrcDir(bctx build.Context, path string, srcDir string, mode build
 		mode |= build.IgnoreVendor
 		isVirtual = true
 	}
-	pkg, err := bctx.Import(path, srcDir, mode)
+	var pkg *build.Package
+	var err error
+	if mod != nil && mod.IsValid() && !mod.IsStd() {
+		if _, dir, typ := mod.Lookup(path); typ != fastmod.PkgTypeNil {
+			srcDir = dir
+			pkg, err = bctx.ImportDir(srcDir, mode)
+			if err == nil {
+				pkg.ImportPath = path
+			}
+		}
+	}
+	if pkg == nil {
+		if filepath.IsAbs(path) {
+			pkg, err = bctx.ImportDir(path, mode)
+		} else {
+			pkg, err = bctx.Import(path, srcDir, mode)
+		}
+	}
 	if err != nil {
 		return nil, err
 	}
@@ -181,8 +203,9 @@ func importWithSrcDir(bctx build.Context, path string, srcDir string, mode build
 		pkg.GoFiles = exclude(pkg.GoFiles, "dirent_linux.go")
 	case "runtime":
 		pkg.GoFiles = []string{} // Package sources are completely replaced in natives.
+		//pkg.GoFiles = []string{"error.go", "typekind.go"}
 	case "runtime/internal/sys":
-		pkg.GoFiles = []string{fmt.Sprintf("zgoos_%s.go", bctx.GOOS), "zversion.go"}
+		pkg.GoFiles = []string{fmt.Sprintf("zgoos_%s.go", bctx.GOOS), "zversion.go", "stubs.go", "zgoarch_386.go", "arch_386.go", "arch.go"}
 	case "runtime/pprof":
 		pkg.GoFiles = nil
 	case "internal/poll":
@@ -297,11 +320,12 @@ func parseAndAugment(bctx *build.Context, pkg *build.Package, isTest bool, fileS
 	}
 
 	nativesContext := &build.Context{
-		GOROOT:   "/",
-		GOOS:     build.Default.GOOS,
-		GOARCH:   "js",
-		Compiler: "gc",
-		JoinPath: path.Join,
+		GOROOT:      "/",
+		GOOS:        build.Default.GOOS,
+		GOARCH:      "js",
+		Compiler:    "gc",
+		ReleaseTags: goversion.ReleaseTags(),
+		JoinPath:    path.Join,
 		SplitPathList: func(list string) []string {
 			if list == "" {
 				return nil
@@ -464,6 +488,7 @@ type Options struct {
 	Minify         bool
 	Color          bool
 	BuildTags      []string
+	Rebuild        bool
 }
 
 func (o *Options) PrintError(format string, a ...interface{}) {
@@ -492,9 +517,21 @@ type PackageData struct {
 type Session struct {
 	options  *Options
 	bctx     *build.Context
+	mod      *fastmod.Package
 	Archives map[string]*compiler.Archive
 	Types    map[string]*types.Package
 	Watcher  *fsnotify.Watcher
+}
+
+func (s *Session) checkMod(pkg *PackageData) (err error) {
+	s.mod.Clear()
+	if pkg != nil && !pkg.Goroot {
+		err := s.mod.LoadModule(pkg.Dir)
+		if err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 func NewSession(options *Options) (*Session, error) {
@@ -516,6 +553,7 @@ func NewSession(options *Options) (*Session, error) {
 		Archives: make(map[string]*compiler.Archive),
 	}
 	s.bctx = NewBuildContext(s.InstallSuffix(), s.options.BuildTags)
+	s.mod = fastmod.NewPackage(s.bctx)
 	s.Types = make(map[string]*types.Package)
 	if options.Watch {
 		if out, err := exec.Command("ulimit", "-n").Output(); err == nil {
@@ -557,7 +595,7 @@ func (s *Session) BuildDir(packagePath string, importPath string, pkgObj string)
 		return err
 	}
 	pkg.JSFiles = jsFiles
-	archive, err := s.BuildPackage(pkg)
+	archive, err := s.buildPackage(pkg)
 	if err != nil {
 		return err
 	}
@@ -580,6 +618,10 @@ func (s *Session) BuildFiles(filenames []string, pkgObj string, packagePath stri
 			Dir:        packagePath,
 		},
 	}
+	err := s.checkMod(pkg)
+	if err != nil {
+		return err
+	}
 
 	for _, file := range filenames {
 		if strings.HasSuffix(file, ".inc.js") {
@@ -589,7 +631,7 @@ func (s *Session) BuildFiles(filenames []string, pkgObj string, packagePath stri
 		pkg.GoFiles = append(pkg.GoFiles, file)
 	}
 
-	archive, err := s.BuildPackage(pkg)
+	archive, err := s.buildPackage(pkg)
 	if err != nil {
 		return err
 	}
@@ -600,12 +642,20 @@ func (s *Session) BuildFiles(filenames []string, pkgObj string, packagePath stri
 }
 
 func (s *Session) BuildImportPath(path string) (*compiler.Archive, error) {
-	_, archive, err := s.buildImportPathWithSrcDir(path, "")
+	_, archive, err := s.BuildImportPathWithPackage(path, nil)
 	return archive, err
 }
 
-func (s *Session) buildImportPathWithSrcDir(path string, srcDir string) (*PackageData, *compiler.Archive, error) {
-	pkg, err := importWithSrcDir(*s.bctx, path, srcDir, 0, s.InstallSuffix())
+func (s *Session) BuildImportPathWithPackage(path string, pkgData *PackageData) (*PackageData, *compiler.Archive, error) {
+	var srcDir string
+	var mod *fastmod.Package
+	if pkgData != nil {
+		srcDir = pkgData.Dir
+		if !pkgData.Goroot {
+			mod = s.mod
+		}
+	}
+	pkg, err := importWithSrcDir(*s.bctx, path, srcDir, 0, s.InstallSuffix(), mod)
 	if s.Watcher != nil && pkg != nil { // add watch even on error
 		s.Watcher.Add(pkg.Dir)
 	}
@@ -613,7 +663,7 @@ func (s *Session) buildImportPathWithSrcDir(path string, srcDir string) (*Packag
 		return nil, nil, err
 	}
 
-	archive, err := s.BuildPackage(pkg)
+	archive, err := s.buildPackage(pkg)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -622,6 +672,14 @@ func (s *Session) buildImportPathWithSrcDir(path string, srcDir string) (*Packag
 }
 
 func (s *Session) BuildPackage(pkg *PackageData) (*compiler.Archive, error) {
+	err := s.checkMod(pkg)
+	if err != nil {
+		return nil, err
+	}
+	return s.buildPackage(pkg)
+}
+
+func (s *Session) buildPackage(pkg *PackageData) (*compiler.Archive, error) {
 	if archive, ok := s.Archives[pkg.ImportPath]; ok {
 		return archive, nil
 	}
@@ -660,7 +718,7 @@ func (s *Session) BuildPackage(pkg *PackageData) (*compiler.Archive, error) {
 			if importedPkgPath == "unsafe" || ignored {
 				continue
 			}
-			importedPkg, _, err := s.buildImportPathWithSrcDir(importedPkgPath, pkg.Dir)
+			importedPkg, _, err := s.BuildImportPathWithPackage(importedPkgPath, pkg)
 			if err != nil {
 				return nil, err
 			}
@@ -681,7 +739,7 @@ func (s *Session) BuildPackage(pkg *PackageData) (*compiler.Archive, error) {
 		}
 
 		pkgObjFileInfo, err := os.Stat(pkg.PkgObj)
-		if err == nil && !pkg.SrcModTime.After(pkgObjFileInfo.ModTime()) {
+		if !s.options.Rebuild && err == nil && !pkg.SrcModTime.After(pkgObjFileInfo.ModTime()) {
 			// package object is up to date, load from disk if library
 			pkg.UpToDate = true
 			if pkg.IsCommand() {
@@ -717,7 +775,7 @@ func (s *Session) BuildPackage(pkg *PackageData) (*compiler.Archive, error) {
 			if archive, ok := localImportPathCache[path]; ok {
 				return archive, nil
 			}
-			_, archive, err := s.buildImportPathWithSrcDir(path, pkg.Dir)
+			_, archive, err := s.BuildImportPathWithPackage(path, pkg)
 			if err != nil {
 				return nil, err
 			}
@@ -741,7 +799,7 @@ func (s *Session) BuildPackage(pkg *PackageData) (*compiler.Archive, error) {
 	}
 
 	if s.options.Verbose {
-		fmt.Println(pkg.ImportPath)
+		fmt.Println(pkg.Dir)
 	}
 
 	s.Archives[pkg.ImportPath] = archive
@@ -810,7 +868,7 @@ func (s *Session) WriteCommandPackage(archive *compiler.Archive, pkgObj string) 
 		if archive, ok := s.Archives[path]; ok {
 			return archive, nil
 		}
-		_, archive, err := s.buildImportPathWithSrcDir(path, "")
+		_, archive, err := s.BuildImportPathWithPackage(path, nil)
 		return archive, err
 	})
 	if err != nil {

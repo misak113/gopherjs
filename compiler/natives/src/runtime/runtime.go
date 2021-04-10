@@ -4,6 +4,7 @@ package runtime
 
 import (
 	"runtime/internal/sys"
+	"unsafe"
 
 	"github.com/gopherjs/gopherjs/js"
 )
@@ -23,10 +24,20 @@ type Error interface {
 	RuntimeError()
 }
 
+type eface struct {
+	_type *_type
+	data  unsafe.Pointer
+}
+
+type _type struct {
+	str  string
+	kind uint8
+}
+
 // TODO(nevkontakte): In the upstream, this struct is meant to be compatible
 // with reflect.rtype, but here we use a minimal stub that satisfies the API
 // TypeAssertionError expects, which we dynamically instantiate in $assertType().
-type _type struct{ str string }
+//type _type struct{ str string }
 
 func (t *_type) string() string  { return t.str }
 func (t *_type) pkgpath() string { return "" }

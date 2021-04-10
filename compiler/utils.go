@@ -136,6 +136,13 @@ func (fc *funcContext) translateArgs(sig *types.Signature, argExprs []ast.Expr, 
 		return append(args[:sigTypes.RequiredParams()],
 			fmt.Sprintf("new %s([%s])", fc.typeName(sigTypes.VariadicType()), strings.Join(args[sigTypes.RequiredParams():], ", ")))
 	}
+
+	/*if varargType != nil {
+		if len(argExprs[paramsLen-1:]) == 0 {
+			return append(args[:paramsLen-1], fmt.Sprintf("%s.nil", c.typeName(varargType)))
+		}
+		return append(args[:paramsLen-1], fmt.Sprintf("new %s([%s])", c.typeName(varargType), strings.Join(args[paramsLen-1:], ", ")))
+	}*/
 	return args
 }
 
