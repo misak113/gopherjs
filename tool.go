@@ -234,7 +234,7 @@ func main() {
 		goDoc := exec.Command("go", append([]string{"doc"}, args...)...)
 		goDoc.Stdout = os.Stdout
 		goDoc.Stderr = os.Stderr
-		goDoc.Env = append(os.Environ(), "GOARCH=js")
+		goDoc.Env = append(os.Environ(), "GOARCH=wasm")
 		err := goDoc.Run()
 		exitCode := handleError(err, options, nil)
 		os.Exit(exitCode)

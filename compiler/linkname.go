@@ -90,6 +90,12 @@ func parseGoLinknames(fset *token.FileSet, pkgPath string, file *ast.File) ([]Go
 
 		fields := strings.Fields(comment.Text)
 		if len(fields) != 3 {
+			if pkgPath == "runtime" {
+				// These standard library packages are known to use unsupported
+				// "insert"-style go:linkname directives, which we ignore here and handle
+				// case-by-case in native overrides.
+				return nil
+			}
 			return fmt.Errorf(`usage (all fields required): //go:linkname localname importpath.extname`)
 		}
 
@@ -105,7 +111,7 @@ func parseGoLinknames(fset *token.FileSet, pkgPath string, file *ast.File) ([]Go
 		}
 
 		if obj.Kind != ast.Fun {
-			if pkgPath == "math/bits" || pkgPath == "reflect" {
+			if pkgPath == "math/bits" || pkgPath == "reflect" || pkgPath == "runtime" {
 				// These standard library packages are known to use go:linkname with
 				// variables, which GopherJS doesn't support. We silently ignore such
 				// directives, since it doesn't seem to cause any problems.
@@ -116,7 +122,7 @@ func parseGoLinknames(fset *token.FileSet, pkgPath string, file *ast.File) ([]Go
 
 		decl := obj.Decl.(*ast.FuncDecl)
 		if decl.Body != nil {
-			if pkgPath == "runtime" || pkgPath == "internal/bytealg" {
+			if pkgPath == "runtime" {
 				// These standard library packages are known to use unsupported
 				// "insert"-style go:linkname directives, which we ignore here and handle
 				// case-by-case in native overrides.

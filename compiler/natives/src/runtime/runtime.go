@@ -78,6 +78,17 @@ func (e *TypeAssertionError) Error() string {
 		": missing method " + e.missingMethod
 }
 
+func get_envs() (envs []string) {
+	process := js.Global.Get("process")
+	envKeys := js.Global.Get("Object").Call("keys", process)
+	for i := 0; i < envKeys.Get("length").Int(); i++ {
+		envKey := envKeys.Index(i).String()
+		envVal := process.Get(envKey).String()
+		envs = append(envs, envKey+"="+envVal)
+	}
+	return envs
+}
+
 func init() {
 	jsPkg := js.Global.Get("$packages").Get("github.com/gopherjs/gopherjs/js")
 	js.Global.Set("$jsObjectPtr", jsPkg.Get("Object").Get("ptr"))

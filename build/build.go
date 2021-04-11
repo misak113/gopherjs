@@ -14,7 +14,6 @@ import (
 	"os/exec"
 	"path"
 	"path/filepath"
-	"runtime"
 	"strconv"
 	"strings"
 	"time"
@@ -63,8 +62,8 @@ func NewBuildContext(installSuffix string, buildTags []string) *build.Context {
 	return &build.Context{
 		GOROOT:        DefaultGOROOT,
 		GOPATH:        build.Default.GOPATH,
-		GOOS:          build.Default.GOOS,
-		GOARCH:        "js",
+		GOOS:          "js",
+		GOARCH:        "wasm",
 		InstallSuffix: installSuffix,
 		Compiler:      "gc",
 		BuildTags: append(buildTags,
@@ -137,7 +136,7 @@ func statFile(path string) (os.FileInfo, error) {
 func Import(path string, mode build.ImportMode, installSuffix string, buildTags []string) (*PackageData, error) {
 	wd, err := os.Getwd()
 	if err != nil {
-		// Getwd may fail if we're in GOARCH=js mode. That's okay, handle
+		// Getwd may fail if we're in GOOS=js mode. That's okay, handle
 		// it by falling back to empty working directory. It just means
 		// Import will not be able to resolve relative import paths.
 		wd = ""
@@ -150,13 +149,6 @@ func importWithSrcDir(bctx build.Context, path string, srcDir string, mode build
 	// bctx is passed by value, so it can be modified here.
 	var isVirtual bool
 	switch path {
-	case "syscall":
-		// syscall needs to use a typical GOARCH like amd64 to pick up definitions for _Socklen, BpfInsn, IFNAMSIZ, Timeval, BpfStat, SYS_FCNTL, Flock_t, etc.
-		bctx.GOARCH = runtime.GOARCH
-		bctx.InstallSuffix = "js"
-		if installSuffix != "" {
-			bctx.InstallSuffix += "_" + installSuffix
-		}
 	case "syscall/js":
 		// There are no buildable files in this package, but we need to use files in the virtual directory.
 		mode |= build.FindOnly
@@ -203,13 +195,11 @@ func importWithSrcDir(bctx build.Context, path string, srcDir string, mode build
 		pkg.GoFiles = exclude(pkg.GoFiles, "dirent_linux.go")
 	case "runtime":
 		pkg.GoFiles = []string{} // Package sources are completely replaced in natives.
-		//pkg.GoFiles = []string{"error.go", "typekind.go"}
-	case "runtime/internal/sys":
-		pkg.GoFiles = []string{fmt.Sprintf("zgoos_%s.go", bctx.GOOS), "zversion.go", "stubs.go", "zgoarch_386.go", "arch_386.go", "arch.go"}
-	case "runtime/pprof":
-		pkg.GoFiles = nil
-	case "internal/poll":
-		pkg.GoFiles = exclude(pkg.GoFiles, "fd_poll_runtime.go")
+	case "runtime/internal/atomic":
+		// practically JS is not running in WebAssembly. It uses GOARCH only to reuse JS code of go repo
+		// unfortunately go repo has wasm build tag on all files related to js
+		// so wasm is used and wasm only related files has to be excluded
+		pkg.GoFiles = exclude(pkg.GoFiles, "atomic_wasm.go")
 	case "sync":
 		// GopherJS completely replaces sync.Pool implementation with a simpler one,
 		// since it always executes in a single-threaded environment.
@@ -321,8 +311,8 @@ func parseAndAugment(bctx *build.Context, pkg *build.Package, isTest bool, fileS
 
 	nativesContext := &build.Context{
 		GOROOT:      "/",
-		GOOS:        build.Default.GOOS,
-		GOARCH:      "js",
+		GOOS:        "js",
+		GOARCH:      "wasm",
 		Compiler:    "gc",
 		ReleaseTags: goversion.ReleaseTags(),
 		JoinPath:    path.Join,

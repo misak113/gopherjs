@@ -5,10 +5,8 @@ package unix
 import "syscall"
 
 const (
-	randomTrap        uintptr = 0
-	fstatatTrap       uintptr = 0
-	getrandomTrap     uintptr = 0
-	copyFileRangeTrap uintptr = 0
+	randomTrap  uintptr = 0
+	fstatatTrap uintptr = 0
 )
 
 func IsNonblock(fd int) (nonblocking bool, err error) {

@@ -31,7 +31,7 @@ func init() {
 func runtime_beforeExit() {}
 
 func executable() (string, error) {
-	return "", errors.New("Executable not implemented for GOARCH=js")
+	return "", errors.New("Executable not implemented for GOOS=js")
 }
 
 //go:linkname fastrand runtime.fastrand

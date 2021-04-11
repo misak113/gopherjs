@@ -17,8 +17,6 @@ func HasExec() bool {
 		if strings.HasPrefix(runtime.GOARCH, "arm") {
 			return false
 		}
-	}
-	switch runtime.GOARCH {
 	case "js":
 		return false
 	}
